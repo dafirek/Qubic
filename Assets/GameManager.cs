@@ -20,6 +20,7 @@ public class GameManager : MonoBehaviour
     private GameObject lastHighlighted = null;
 
     public int[,,] gameState = new int[4, 4, 4];
+    private int cache;
 
     public static GameManager Instance =>
         _instance ? _instance : new GameObject("Game Manager").AddComponent<GameManager>();
@@ -33,62 +34,71 @@ public class GameManager : MonoBehaviour
     void Start()
     {
         CudaAI = gameObject.AddComponent<CudaAI>();
+        cache = 0;
     }
 
 
     void Update()
     {
-        if (!GameOver) {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-        RaycastHit hit;
-            if (Physics.Raycast(ray, out hit))
+        if (!GameOver)
+        {
+            if (cache == 0)
             {
-                GameObject hitObject = hit.transform.gameObject;
-                PlaneClick planeClick = hit.transform.GetComponent<PlaneClick>();
-                if (hitObject != lastHighlighted && planeClick != null)
+                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                RaycastHit hit;
+                if (Physics.Raycast(ray, out hit))
                 {
-                    if (lastHighlighted != null)
+                    GameObject hitObject = hit.transform.gameObject;
+                    PlaneClick planeClick = hit.transform.GetComponent<PlaneClick>();
+                    if (hitObject != lastHighlighted && planeClick != null)
                     {
-                        lastHighlighted.GetComponent<Renderer>().material.mainTexture = defaultTexture;
+                        if (lastHighlighted != null)
+                        {
+                            lastHighlighted.GetComponent<Renderer>().material.mainTexture = defaultTexture;
+                        }
+                        if (planeClick.y == 3)
+                        {
+                            hitObject.GetComponent<Renderer>().material.mainTexture = highlightTexture;
+                            lastHighlighted = hitObject;
+                        }
                     }
-                    if (planeClick.y == 3)
+
+
+
+                    if (Input.GetMouseButtonDown(0))
                     {
-                        hitObject.GetComponent<Renderer>().material.mainTexture = highlightTexture;
-                        lastHighlighted = hitObject;
+                        cache = 5;
+                        if (planeClick != null && planeClick.y == 3)
+                        {
+                            if (gameState[planeClick.x, planeClick.y, planeClick.z] == 0)
+                            {
+                                gameState = MakeMove(gameState, (planeClick.x + planeClick.z * 4), playerTurn ? 1 : 2, planeClick);
+                                Debug.Log(planeClick.x + " , " + planeClick.y + " , " + planeClick.z);
+                                if (IsGameOver(gameState))
+                                {
+                                    Debug.Log("Player " + (playerTurn ? 1 : 2) + " Win!");
+                                    GameOver = true;
+                                }
+                                playerTurn = !playerTurn;
+                                if (!GameOver)
+                                {
+                                    gameState = MakeMove(gameState, AiMove(gameState), playerTurn ? 1 : 2, planeClick);
+                                }
+                                playerTurn = !playerTurn;
+                            }
+
+
+                        }
                     }
                 }
-
-
-
-                if (Input.GetMouseButtonDown(0))
+                else if (lastHighlighted != null)
                 {
-                    if (planeClick != null && planeClick.y == 3)
-                    {
-                        if (gameState[planeClick.x, planeClick.y, planeClick.z] == 0)
-                        {
-                            gameState = MakeMove(gameState, (planeClick.x + planeClick.z * 4), playerTurn ? 1 : 2, planeClick);
-                            Debug.Log(planeClick.x + " , " + planeClick.y + " , " + planeClick.z);
-                            if (IsGameOver(gameState))
-                            {
-                                Debug.Log("Player " + (playerTurn ? 1 : 2) + " Win!");
-                                GameOver = true;
-                            }
-                            playerTurn = !playerTurn;
-                            if (!GameOver)
-                            {
-                                gameState = MakeMove(gameState, AiMove(gameState), playerTurn ? 1 : 2, planeClick);
-                            }
-                        }
-
-
-                    }
+                    lastHighlighted.GetComponent<Renderer>().material.mainTexture = defaultTexture;
+                    lastHighlighted = null;
+                    cache = 5;
                 }
             }
-        }
-        else if (lastHighlighted != null)
-        {
-            lastHighlighted.GetComponent<Renderer>().material.mainTexture = defaultTexture;
-            lastHighlighted = null;
+            else { cache--; }
         }
     }
 
@@ -161,28 +171,27 @@ public class GameManager : MonoBehaviour
 
     public int[] PosibleMoves(int[,,] board)
     {
-        int[] posm = new int[16];
+        List<int> posm = new List<int>();
         for (int i = 0; i < 4; i++)
         {
             for (int j = 0; j < 4; j++)
             {
                 if (board[i, 3, j] == 0)
                 {
-                    posm[(i+j*4)] = 1+i+j*4;
+                    int index = i * 4 + j;
+                    posm.Add(index);
                 }
             }
         }
-        return posm;
+        
+        return posm.ToArray();
     }
 
     public bool IsOver(int[,,] board)
     {
-        foreach (int p in PosibleMoves(board))
+        if(PosibleMoves(board).Length != 0)
         {
-            if(p != 0)
-            {
-                return false;
-            }
+            return false;
         }
         return true;
     }
@@ -195,7 +204,7 @@ public class GameManager : MonoBehaviour
             if(boardout[move%4,i,move/4] == 0 && move >=0)
             {
                 boardout[move % 4, i, move / 4] = player;
-                pk.OnPlaneClicked(y: i);
+                pk.OnPlaneClicked(y: i, x: move%4, z: move / 4);
                 break;
             }
         }
@@ -208,9 +217,9 @@ public class GameManager : MonoBehaviour
         int movecpy = move;
         for (int i = 0; i < 4; i++)
         {
-            if (boardout[move % 4, i, move / 4] == 0 && move >= 0)
+            if (boardout[move / 4, i, move % 4] == 0)
             {
-                boardout[move % 4, i, move / 4] = player;
+                boardout[move / 4, i, move % 4] = player;
                 break;
             }
         }
@@ -243,22 +252,21 @@ public class GameManager : MonoBehaviour
         int[] pmove = PosibleMoves(board);
         int move = 0;
         int max = int.MinValue;
-        int score = 0;
-        for(int i = 0; i < 16; i++)
+        int score = int.MinValue;
+        foreach(int pm in pmove)
         {
-            score = 0;
-            if(pmove[i] == 1)
+            score = AlphaBeta(MakeMove(board, pm, 1), 3, int.MinValue, int.MaxValue, false);
+            Debug.Log("Score: " + score);
+            if (max < score)
             {
-                score = AlphaBeta(MakeMove(board, i, 1), 3, int.MinValue, int.MaxValue, false);
-                if (max < score)
-                {
-                    Debug.Log(i);
-                    max = score;
-                    move = i;
-                }
+                max = score;
+                move = pm;
             }
-            
         }
+        
+            //if(pmove[i] == 1) ez azt jelenti hogy csak a 0 move számít
+            
+        Debug.Log("AI chose: " + move + " move.");
         return move;
     }
 
@@ -277,12 +285,9 @@ public class GameManager : MonoBehaviour
             int value = int.MinValue;
             foreach (int m in PosibleMoves(board))
             {
-                if (m != 0)
-                {
-                    value = Math.Max(value, AlphaBeta(MakeMove(board, m - 1, playerTurn ? 1 : 2), depth - 1, alpha, beta, false));
-                    alpha = Math.Max(alpha, value);
-                    if (value >= beta) { break; }
-                }
+                value = Math.Max(value, AlphaBeta(MakeMove(board, m, playerTurn ? 1 : 2), depth - 1, alpha, beta, false));
+                alpha = Math.Max(alpha, value);
+                if (value >= beta) { break; }
             }
             return value;
         }
@@ -291,12 +296,9 @@ public class GameManager : MonoBehaviour
             int value = int.MaxValue;
             foreach (int m in PosibleMoves(board))
             {
-                if (m != 0)
-                {
-                    value = Math.Min(value, AlphaBeta(MakeMove(board, m - 1, playerTurn ? 2 : 1), depth - 1, alpha, beta, true));
-                    beta = Math.Min(beta, value);
-                    if (value <= alpha) { break; }
-                }
+                value = Math.Min(value, AlphaBeta(MakeMove(board, m, playerTurn ? 2 : 1), depth - 1, alpha, beta, true));
+                beta = Math.Min(beta, value);
+                if (value <= alpha) { break; }
             }
             return value;
         }
