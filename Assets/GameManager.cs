@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
 {
@@ -83,6 +84,11 @@ public class GameManager : MonoBehaviour
                                 if (!GameOver)
                                 {
                                     gameState = MakeMove(gameState, AiMove(gameState), playerTurn ? 1 : 2, planeClick);
+                                }
+                                if (IsGameOver(gameState))
+                                {
+                                    Debug.Log("Player " + (playerTurn ? 1 : 2) + " Win!");
+                                    GameOver = true;
                                 }
                                 playerTurn = !playerTurn;
                             }
@@ -178,7 +184,7 @@ public class GameManager : MonoBehaviour
             {
                 if (board[i, 3, j] == 0)
                 {
-                    int index = i * 4 + j;
+                    int index = i + j*4;
                     posm.Add(index);
                 }
             }
@@ -201,7 +207,7 @@ public class GameManager : MonoBehaviour
         int movecpy = move;
         for (int i = 0; i < 4; i++)
         {
-            if(boardout[move%4,i,move/4] == 0 && move >=0)
+            if(boardout[move%4,i,move/4] == 0)
             {
                 boardout[move % 4, i, move / 4] = player;
                 pk.OnPlaneClicked(y: i, x: move%4, z: move / 4);
@@ -217,9 +223,9 @@ public class GameManager : MonoBehaviour
         int movecpy = move;
         for (int i = 0; i < 4; i++)
         {
-            if (boardout[move / 4, i, move % 4] == 0)
+            if (boardout[move % 4, i, move / 4] == 0)
             {
-                boardout[move / 4, i, move % 4] = player;
+                boardout[move % 4, i, move / 4] = player;
                 break;
             }
         }
@@ -250,21 +256,26 @@ public class GameManager : MonoBehaviour
     public int AiMove(int[,,] board)
     {
         int[] pmove = PosibleMoves(board);
+        List<int> equals = new List<int>();
         int move = 0;
         int max = int.MinValue;
-        int score = int.MinValue;
+        int score;
         foreach(int pm in pmove)
         {
-            score = AlphaBeta(MakeMove(board, pm, 1), 3, int.MinValue, int.MaxValue, false);
-            Debug.Log("Score: " + score);
+            score = AlphaBeta(MakeMove(board, pm, 2), 5, int.MinValue, int.MaxValue, false);
+            Debug.Log("Score: " + score + " : " + pm);
             if (max < score)
             {
                 max = score;
-                move = pm;
+                equals.Clear();
+                equals.Add(pm);
+            }else if(max == score)
+            {
+                equals.Add(pm);
             }
         }
-        
-            //if(pmove[i] == 1) ez azt jelenti hogy csak a 0 move számít
+
+        move = equals.ToArray()[Random.Range(0, equals.Count)]; 
             
         Debug.Log("AI chose: " + move + " move.");
         return move;
@@ -274,20 +285,21 @@ public class GameManager : MonoBehaviour
     {
         if(IsGameOver(board) || IsOver(board) || depth == 0)
         {
-            if (playerTurn) 
-            {
-                return eval(board);
-            }
-            return CudaEval(board);
+            //if (isMaximizingPlayer) 
+            //{
+              //  return eval(board,false);
+            //}
+            return eval(board, false);
+            //return CudaEval(board);
         }
         if (isMaximizingPlayer)
         {
             int value = int.MinValue;
             foreach (int m in PosibleMoves(board))
             {
-                value = Math.Max(value, AlphaBeta(MakeMove(board, m, playerTurn ? 1 : 2), depth - 1, alpha, beta, false));
-                alpha = Math.Max(alpha, value);
+                value = Math.Max(value, AlphaBeta(MakeMove(board, m, 2), depth - 1, alpha, beta, false));
                 if (value >= beta) { break; }
+                alpha = Math.Max(alpha, value);
             }
             return value;
         }
@@ -296,53 +308,52 @@ public class GameManager : MonoBehaviour
             int value = int.MaxValue;
             foreach (int m in PosibleMoves(board))
             {
-                value = Math.Min(value, AlphaBeta(MakeMove(board, m, playerTurn ? 2 : 1), depth - 1, alpha, beta, true));
-                beta = Math.Min(beta, value);
+                value = Math.Min(value, AlphaBeta(MakeMove(board, m, 1), depth - 1, alpha, beta, true));
                 if (value <= alpha) { break; }
+                beta = Math.Min(beta, value);
             }
             return value;
         }
     }
-
-    public int eval(int[,,] board)
+    //player 1 értékét méri
+    public int eval(int[,,] board, bool max)
     {
         int score = 0;
-        int mult = playerTurn ? -1 : 1;
-        for (int idx = 0;idx<64;idx++)
+        int mult = max ? 1 : -1;
+        for(int i = 0; i<4; i++)
         {
-            int x = idx / (4 * 4);
-            int y = (idx / 4) % 4;
-            int z = idx % 4;
-
-            //irányokba keres
-            if (x == 0) { score += check_line(board, x, y, z, 1, 0, 0)*mult; }
-            if (y == 0) { score += check_line(board, x, y, z, 0, 1, 0)*mult; }
-            if (z == 0) { score += check_line(board, x, y, z, 0, 0, 1)*mult; }
-
-            //2d átlokban keres
-            score += check_line(board, x, y, z, 1, 1, 0)*mult;
-            score += check_line(board, x, y, z, 1, -1, 0)*mult;
-            score += check_line(board, x, y, z, 1, 0, 1)*mult;
-            score += check_line(board, x, y, z, -1, 0, 1)*mult;
-            score += check_line(board, x, y, z, 0, 1, 1)*mult;
-            score += check_line(board, x, y, z, 0, 1, -1)*mult;
-
-            // 3ds átlokban keres
-            score += check_line(board, x, y, z, 1, 1, 1)*mult;
-            score += check_line(board, x, y, z, -1, 1, 1)*mult;
-            score += check_line(board, x, y, z, 1, -1, 1)*mult;
-            score += check_line(board, x, y, z, 1, 1, -1)*mult;
+            for(int j = 0; j<4; j++)
+            {
+                //lines 4*4*3 = 48
+                score += check_line(board, i, j, 0, 0, 0, 1) * mult;
+                score += check_line(board, i, 0, j, 0, 1, 0) * mult;
+                score += check_line(board, 0, i, j, 1, 0, 0) * mult;
+            }
+            //2d diagonal 4*6 = 24
+            score += check_line(board, i, 0, 0, 0, 1, 1) * mult;
+            score += check_line(board, i, 3, 0, 0, -1, 1) * mult;
+            score += check_line(board, 0, i, 0, 1, 0, 1) * mult;
+            score += check_line(board, 3, i, 0, -1, 0, 1) * mult;
+            score += check_line(board, 0, 0, i, 1, 1, 0) * mult;
+            score += check_line(board, 3, 0, i, -1, 1, 0) * mult;
         }
+        //3d diagonal 4
+        score += check_line(board, 0, 0, 0, 1, 1, 1) * mult;
+        score += check_line(board, 3, 0, 0, -1, 1, 1) * mult;
+        score += check_line(board, 0, 3, 0, 1, -1, 1) * mult;
+        score += check_line(board, 0, 0, 3, 1, 1, -1) * mult;
+        // 48+24+4=76 possible winning line
         return score;
     }
 
+    //player 1 mennyire állít jól player 2 vel szemben
     public int check_line(int[,,] board, int x, int y, int z, int dx, int dy, int dz)
     {
-        int ai = 0;
-        int player = 0;
-        int ix = 0;
-        int iy = 0;
-        int iz = 0;
+        int player1 = 0;
+        int player2 = 0;
+        int ix;
+        int iy;
+        int iz;
 
         for (int i = 0; i < 4; i++)
         {
@@ -352,34 +363,34 @@ public class GameManager : MonoBehaviour
 
             if (ix >= 0 && ix < 4 && iy >= 0 && iy < 4 && iz >= 0 && iz < 4)
             {
-                if (board[ix,iy,iz] == 2)
+                if (board[ix,iy,iz] == 1)
                 {
-                    ai++;
+                    player1++;
                 }
-                else if (board[ix,iy,iz] == 1)
+                else if (board[ix,iy,iz] == 2)
                 {
-                    player++;
+                    player2++;
                 }
             }
             else { return 0; }//ha egy sort valamiért a közepén kezd meg akkor értéktelen az adat
         }
 
-        if (player == 0)
+        if (player2 == 0)
         {
-            switch (ai)
+            switch (player1)
             {
-                case 4: return 10000;
+                case 4: return 1000;
                 case 3: return 100;
                 case 2: return 20;
                 default:
                     return 0;
             }
         }
-        if (ai == 0)
+        if (player1 == 0)
         {
-            switch (player)
+            switch (player2)
             {
-                case 4: return -10000;
+                case 4: return -1000;
                 case 3: return -100;
                 case 2: return -20;
                 default:

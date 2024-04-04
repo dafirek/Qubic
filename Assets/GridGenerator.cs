@@ -59,9 +59,17 @@ public class PlaneClick : MonoBehaviour
     public GameObject spherePrefab;
 
 
-    public void OnPlaneClicked(int y)
+    public void OnPlaneClicked(int y, int x = -1, int z = -1)
     {
-        Vector3 position = new Vector3((float)(x * 2.5), (float)(y * 2.5), (float)(z * 2.5));
+        Vector3 position;
+        if (x == -1 || z == -1) 
+        {
+            position = new Vector3((float)(this.x * 2.5), (float)(y * 2.5), (float)(this.z * 2.5));
+        }
+        else 
+        {
+            position = new Vector3((float)(x * 2.5), (float)(y * 2.5), (float)(z * 2.5));
+        }
         GameObject cell = Instantiate(spherePrefab, position, Quaternion.identity);
         cell.GetComponent<MeshRenderer>().enabled = true;
         if (GameManager.Instance.playerTurn) { cell.GetComponent<MeshRenderer>().material = GameManager.Instance.playerMaterial; } else { cell.GetComponent<MeshRenderer>().material = GameManager.Instance.aiMaterial; }
